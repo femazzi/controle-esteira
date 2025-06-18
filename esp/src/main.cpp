@@ -6,20 +6,19 @@
 // Definição dos pinos
 const int MOTOR_PIN = 26;  // Pino para controle do motor
 const int IR_SENSOR_PIN = 27;  // Pino do sensor IR
-const int PWM_CHANNEL = 0;  // Canal PWM
-const int PWM_FREQ = 5000;  // Frequência do PWM em Hz
-const int PWM_RESOLUTION = 8;  // Resolução do PWM (8 bits = 0-255)
 
 // Variáveis globais
 volatile unsigned long pecasContadas = 0;
 volatile unsigned long ultimaContagem = 0;
 const unsigned long DEBOUNCE_DELAY = 500;  // Delay de 500ms para evitar contagens duplas
 bool motorLigado = false;
-int velocidadeMotor = 128;  // 50% de velocidade inicial (0-255)
 
-// Configurações do WiFi
-const char* ssid = "carai";
-const char* password = "cam07251060";
+// Configurações do Access Point
+const char* ap_ssid = "Esteira-ESP32";  // Nome da rede Wi-Fi que será criada
+const char* ap_password = "12345678";    // Senha da rede Wi-Fi que será criada
+IPAddress local_ip(192,168,4,1);         // IP do ESP32
+IPAddress gateway(192,168,4,1);          // Gateway
+IPAddress subnet(255,255,255,0);         // Máscara de sub-rede
 
 // Criação do servidor web
 AsyncWebServer server(80);
@@ -35,11 +34,11 @@ void IRAM_ATTR contarPeca() {
 void setup() {
     Serial.begin(115200);
     
-    // Configuração do PWM
-    ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-    ledcAttachPin(MOTOR_PIN, PWM_CHANNEL);
-    ledcWrite(PWM_CHANNEL, 0);  // Inicia desligado
+    // Configuração do pino do motor como saída digital
+    pinMode(MOTOR_PIN, OUTPUT);
+    digitalWrite(MOTOR_PIN, HIGH);  // Inicia desligado
     
+    // Configuração do pino do sensor IR como entrada
     pinMode(IR_SENSOR_PIN, INPUT);
     
     // Anexa a interrupção ao sensor IR
@@ -51,13 +50,16 @@ void setup() {
         return;
     }
 
-    // Conexão WiFi
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(1000);
-        Serial.println("Conectando ao WiFi...");
-    }
-    Serial.println(WiFi.localIP());
+    // Configuração do Access Point
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(local_ip, gateway, subnet);
+    WiFi.softAP(ap_ssid, ap_password);
+
+    Serial.println("Access Point iniciado");
+    Serial.print("SSID: ");
+    Serial.println(ap_ssid);
+    Serial.print("IP: ");
+    Serial.println(local_ip);
 
     // Rotas do servidor
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -75,33 +77,13 @@ void setup() {
     // API endpoints
     server.on("/toggle-motor", HTTP_POST, [](AsyncWebServerRequest *request){
         motorLigado = !motorLigado;
-        if (motorLigado) {
-            ledcWrite(PWM_CHANNEL, velocidadeMotor);
-        } else {
-            ledcWrite(PWM_CHANNEL, 0);
-        }
+        digitalWrite(MOTOR_PIN, motorLigado ? LOW : HIGH);  // Liga com LOW ou desliga com HIGH
         request->send(200, "application/json", "{\"status\": \"" + String(motorLigado ? "ligado" : "desligado") + "\"}");
     });
 
-    server.on("/velocidade", HTTP_POST, [](AsyncWebServerRequest *request){
-        if (request->hasParam("valor", true)) {
-            String valorStr = request->getParam("valor", true)->value();
-            int novaVelocidade = valorStr.toInt();
-            velocidadeMotor = map(novaVelocidade, 0, 100, 0, 255);
-            if (motorLigado) {
-                ledcWrite(PWM_CHANNEL, velocidadeMotor);
-            }
-            request->send(200, "application/json", "{\"velocidade\": " + String(novaVelocidade) + "}");
-        } else {
-            request->send(400, "application/json", "{\"erro\": \"Parâmetro 'valor' não encontrado\"}");
-        }
-    });
-
     server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request){
-        int velocidadePorcentagem = map(velocidadeMotor, 0, 255, 0, 100);
         String json = "{\"pecas\":" + String(pecasContadas) + 
-                     ",\"motor\":\"" + String(motorLigado ? "ligado" : "desligado") + "\"" +
-                     ",\"velocidade\":" + String(velocidadePorcentagem) + "}";
+                     ",\"motor\":\"" + String(motorLigado ? "ligado" : "desligado") + "\"}";
         request->send(200, "application/json", json);
     });
 
