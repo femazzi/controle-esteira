@@ -53,7 +53,7 @@ Este projeto implementa um sistema completo de automação para esteira transpor
 
 1. Clone o repositório:
 ```bash
-git clone https://github.com/seu-usuario/controle-esteira.git
+git clone https://github.com/femazzi/controle-esteira.git
 cd controle-esteira/esp
 ```
 
